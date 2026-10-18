@@ -55,7 +55,7 @@ rustup target add wasm32-unknown-unknown
 
 Workflow `.github/workflows/ci.yml` запускается при push в `main`, в pull request и вручную через GitHub Actions.
 
-1. На Linux и Windows проверяются форматирование, все Rust-тесты и компиляция WASM. Версия Rust и необходимые компоненты закреплены в `rust-toolchain.toml`.
+1. На Linux и Windows проверяются форматирование, все Rust-тесты и компиляция WASM. Для Linux закреплён образ `ubuntu-24.04`; версия Rust и необходимые компоненты закреплены в `rust-toolchain.toml`.
 2. После проверок Linux собирает игру, автономный HTML и ZIP, проверяет упаковку и запускает браузерные тесты из `tests/browser/test_offline.py`.
 3. Браузерные тесты открывают `file://` в Chromium с отключённой сетью: проверяют загрузку без внешних запросов, выбор режима, рестарт и полный маршрут с бегом, подбором топлива, паузой и возвращением. Ошибки JavaScript или WebGL в консоли приводят к падению теста. При ошибке CI сохраняет скриншоты и Playwright trace в артефакт `browser-diagnostics`.
 4. Готовые HTML и ZIP сохраняются в артефакт `light-until-dawn-offline` на 30 дней. Для `main` после всех проверок выполняется деплой в окружение `github-pages`; pull request сайт не обновляет.
