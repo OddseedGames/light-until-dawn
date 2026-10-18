@@ -1,0 +1,19 @@
+[package]
+name = "oddseed-until-dawn"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "until-dawn"
+path = "src/main.rs"
+
+[dependencies]
+macroquad = { version = "0.4", features = ["audio"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
