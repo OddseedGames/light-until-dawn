@@ -1,4 +1,5 @@
 import base64
+import hashlib
 from html.parser import HTMLParser
 from pathlib import Path
 import re
@@ -32,6 +33,9 @@ if wasm[:8] != b"\x00asm\x01\x00\x00\x00":
     raise ValueError("Invalid WASM header")
 if wasm != (dist / "until-dawn.wasm").read_bytes():
     raise ValueError("Embedded WASM differs from the built game")
+version = hashlib.sha256(wasm).hexdigest()[:12]
+if f"load('until-dawn.wasm?v={version}');" not in (dist / "index.html").read_text():
+    raise ValueError("Hosted WASM URL does not contain the current build hash")
 folder = "OddseedGames-LightUntilDawn"
 with ZipFile(dist / f"{folder}.zip") as package:
     if package.testzip() is not None:

@@ -105,6 +105,7 @@ class OfflineGameTests(unittest.TestCase):
         self.wait_for("s.position > 0.525 && s.position < 0.58")
         self.page.keyboard.press("e")
         self.wait_for("s.carrying === 1")
+        self.assertEqual(self.state()["enemies"], 0)
         self.page.keyboard.press("p")
         expect(self.status).to_have_attribute("data-phase", "2")
         paused = self.state()
@@ -118,6 +119,46 @@ class OfflineGameTests(unittest.TestCase):
         self.page.keyboard.press("e")
         self.wait_for("s.outsideSeconds === 0 && s.searchesLeft === 2")
         self.assertGreater(self.state()["fuel"], fuel + 16)
+
+    def nightmare_canister(self):
+        self.page.keyboard.press("q")
+        expect(self.status).to_have_attribute("data-difficulty", "2")
+        self.page.keyboard.press("Enter")
+        expect(self.status).to_have_attribute("data-phase", "1")
+        self.page.keyboard.press("e")
+        self.wait_for("s.outsideSeconds > 0")
+        self.click_game(976, 748)
+        self.wait_for("s.position > 0.525 && s.position < 0.58")
+        self.assertEqual(self.state()["enemies"], 0)
+        self.page.keyboard.press("e")
+        self.wait_for("s.carrying === 1 && s.enemies === 2")
+
+    def test_nightmare_pursuers_pause_and_escape(self):
+        self.nightmare_canister()
+        self.page.keyboard.press("p")
+        expect(self.status).to_have_attribute("data-phase", "2")
+        paused = self.state()
+        self.page.wait_for_timeout(500)
+        self.assertEqual(self.state(), paused)
+        self.page.keyboard.press("Enter")
+        self.page.keyboard.down("Shift")
+        self.page.keyboard.down("d")
+        self.wait_for("s.position < 0.035")
+        self.page.keyboard.up("d")
+        self.page.keyboard.up("Shift")
+        self.page.keyboard.press("e")
+        self.wait_for("s.outsideSeconds === 0 && s.searchesLeft === 2")
+        self.assertEqual(self.state()["enemies"], 0)
+        self.assertEqual(self.state()["enemyDistance"], -1)
+
+    def test_nightmare_pursuers_catch_an_idle_operator(self):
+        self.nightmare_canister()
+        expect(self.status).to_have_attribute("data-phase", "8", timeout=10_000)
+        self.assertEqual(self.state()["searchesLeft"], 3)
+        self.assertLess(self.state()["fuel"], 38)
+        self.page.keyboard.press("r")
+        expect(self.status).to_have_attribute("data-phase", "1")
+        self.assertEqual(self.state()["enemies"], 0)
 
 
 if __name__ == "__main__":

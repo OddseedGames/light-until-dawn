@@ -41,12 +41,12 @@
           document.documentElement.classList.add('game-ready');
           document.getElementById('loading').hidden = true;
         };
-        imports.env.oddseed_status = function (phase, elapsed, fuel, temperature, integrity, signal, position, outsideSeconds, carrying, stamina, difficulty, searchesLeft) {
+        imports.env.oddseed_status = function (phase, elapsed, fuel, temperature, integrity, signal, position, outsideSeconds, carrying, stamina, difficulty, searchesLeft, enemies, enemyDistance, enemyPosition, enemyWarning) {
           const status = document.getElementById('game-status');
-          const names = ['Ожидание', 'Смена идёт', 'Пауза', 'Рассвет: победа', 'Спасение: победа', 'Поражение: холод', 'Поражение: периметр', 'Поражение: не вернулся'];
+          const names = ['Ожидание', 'Смена идёт', 'Пауза', 'Рассвет: победа', 'Спасение: победа', 'Поражение: холод', 'Поражение: периметр', 'Поражение: не вернулся', 'Поражение: существо догнало'];
           const modes = ['Знакомство', 'Ночь', 'Кошмар'];
-          Object.assign(status.dataset, {phase, elapsed, fuel, temperature, integrity, signal, position, outsideSeconds, carrying, stamina, difficulty, searchesLeft});
-          status.value = `${names[phase]}. Режим: ${modes[difficulty]}. Прошло ${Math.floor(elapsed)} секунд. Топливо: ${Math.round(fuel)} литров. Температура: ${Math.round(temperature)}. Прочность: ${Math.round(integrity)}%. Сигнал: ${Math.round(signal)}%.` + (outsideSeconds > 0 ? ` Снаружи: осталось ${outsideSeconds.toFixed(1)} секунд. ${carrying ? 'Канистра у тебя.' : 'Найди канистру.'} Выносливость: ${Math.round(stamina)}%.` : '');
+          Object.assign(status.dataset, {phase, elapsed, fuel, temperature, integrity, signal, position, outsideSeconds, carrying, stamina, difficulty, searchesLeft, enemies, enemyDistance, enemyPosition, enemyWarning});
+          status.value = `${names[phase]}. Режим: ${modes[difficulty]}. Прошло ${Math.floor(elapsed)} секунд. Топливо: ${Math.round(fuel)} литров. Температура: ${Math.round(temperature)}. Прочность: ${Math.round(integrity)}%. Сигнал: ${Math.round(signal)}%.` + (outsideSeconds > 0 ? ` Снаружи: осталось ${outsideSeconds.toFixed(1)} секунд. ${carrying ? 'Канистра у тебя.' : 'Найди канистру.'} Выносливость: ${Math.round(stamina)}%.` : '') + (enemies > 0 ? ` За тобой идут существа: ${enemies}. Беги к станции.` : '');
         };
       }
     });

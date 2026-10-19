@@ -1,6 +1,8 @@
 use macroquad::audio::{self, PlaySoundParams, Sound};
 use macroquad::prelude::*;
-use oddseed_until_dawn::game::{Controls, Difficulty, Game, Phase, FUEL_SITES, NIGHT_SECONDS};
+use oddseed_until_dawn::game::{
+    Controls, Difficulty, Enemy, Game, Phase, FUEL_SITES, NIGHT_SECONDS,
+};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 const W: f32 = 1280.0;
@@ -33,6 +35,10 @@ extern "C" {
         stamina: f32,
         difficulty: u32,
         searches_left: u32,
+        enemies: u32,
+        enemy_distance: f32,
+        enemy_position: f32,
+        enemy_warning: f32,
     );
 }
 
@@ -64,7 +70,7 @@ fn opacity(mut color: Color, alpha: f32) -> Color {
 fn prepare_font(font: &Font, dpi: f32) {
     let characters: Vec<char> = (' '..='~')
         .chain('А'..='я')
-        .chain("Ёё°·×—−♪".chars())
+        .chain("Ёё°·×—−♪«»".chars())
         .collect();
     // Grow the atlas before drawing so queued text never references a replaced texture.
     font.populate_font_cache(&characters, (FONT_SIZE as f32 * dpi).ceil() as u16);
@@ -247,6 +253,83 @@ fn grain(index: u32) -> f32 {
     ((n ^ (n >> 15)) % 10_000) as f32 / 10_000.0
 }
 
+fn pursuer(enemy: &Enemy, player_position: f32, time: f32, font: &Font) {
+    let x = world_x(enemy.position);
+    let facing = if player_position < enemy.position {
+        1.0
+    } else {
+        -1.0
+    };
+    let warning = enemy.wake_in > 0.0;
+    let alpha = if warning { 0.35 } else { 1.0 };
+    let stride = if warning {
+        0.0
+    } else {
+        (time * 15.0).sin() * 6.0
+    };
+    let shadow = opacity(rgba(30, 17, 25, 255), alpha);
+    let rim = opacity(RED, alpha * 0.75);
+    draw_ellipse(x, 574.0, 28.0, 4.0, 0.0, rgba(4, 10, 13, 150));
+    draw_triangle(
+        vec2(x - 18.0 * facing, 552.0),
+        vec2(x + 10.0 * facing, 548.0),
+        vec2(x + 2.0 * facing, 565.0),
+        shadow,
+    );
+    draw_line(x - 18.0 * facing, 552.0, x + 10.0 * facing, 548.0, 2.0, rim);
+    for (offset, phase) in [(-11.0, stride), (4.0, -stride)] {
+        draw_line(
+            x + offset * facing,
+            559.0,
+            x + (offset - 4.0) * facing,
+            567.0,
+            3.0,
+            shadow,
+        );
+        draw_line(
+            x + (offset - 4.0) * facing,
+            567.0,
+            x + (offset + phase) * facing,
+            575.0,
+            2.0,
+            rim,
+        );
+    }
+    draw_triangle(
+        vec2(x + 7.0 * facing, 546.0),
+        vec2(x + 22.0 * facing, 553.0),
+        vec2(x + 10.0 * facing, 559.0),
+        shadow,
+    );
+    draw_line(x + 10.0 * facing, 548.0, x + 22.0 * facing, 553.0, 2.0, rim);
+    draw_triangle(
+        vec2(x + 7.0 * facing, 547.0),
+        vec2(x + 9.0 * facing, 539.0),
+        vec2(x + 14.0 * facing, 549.0),
+        shadow,
+    );
+    draw_circle(x + 13.0 * facing, 549.0, 9.0, opacity(RED, 0.09));
+    draw_rectangle(
+        x + 12.0 * facing,
+        548.0,
+        3.0,
+        2.0,
+        if warning { AMBER } else { RED },
+    );
+    centered(
+        font,
+        if warning {
+            "ШОРОХ..."
+        } else {
+            "ПРЕСЛЕДОВАТЕЛЬ"
+        },
+        x,
+        532.0,
+        9,
+        if warning { AMBER } else { RED },
+    );
+}
+
 fn scene(game: &Game, t: f32, font: &Font) {
     let dawn = (game.elapsed / NIGHT_SECONDS - 0.76).max(0.0) / 0.24;
     for row in 0..74 {
@@ -405,7 +488,7 @@ fn scene(game: &Game, t: f32, font: &Font) {
         draw_line(x + 19.0, 456.0, x + 19.0, 495.0, 3.0, rgba(41, 48, 39, 255));
         draw_line(x, 476.0, x + 37.0, 476.0, 3.0, rgba(41, 48, 39, 255));
     }
-    if !game.outside() && game.phase != Phase::Lost {
+    if !game.outside() && !matches!(game.phase, Phase::Lost | Phase::Caught) {
         draw_circle(626.0, 480.0, 4.0, rgba(37, 40, 34, 255));
         draw_rectangle(622.0, 484.0, 8.0, 10.0, rgba(37, 40, 34, 255));
     }
@@ -505,7 +588,10 @@ fn scene(game: &Game, t: f32, font: &Font) {
             );
         }
     }
-    if game.outside() || game.phase == Phase::Lost {
+    for enemy in &game.enemies {
+        pursuer(enemy, game.position, game.elapsed, font);
+    }
+    if game.outside() || matches!(game.phase, Phase::Lost | Phase::Caught) {
         let x = world_x(game.position);
         let y = 567.0;
         draw_circle(x, y - 8.0, 23.0, rgba(219, 221, 156, 12));
@@ -638,7 +724,12 @@ fn scene(game: &Game, t: f32, font: &Font) {
     draw_rectangle_lines(40.0, 230.0, 1200.0, 372.0, 1.0, LINE);
     if game.outside() {
         box_fill(
-            Rect::new(60.0, 277.0, 550.0, 72.0),
+            Rect::new(
+                60.0,
+                277.0,
+                640.0,
+                if game.enemies_enabled() { 94.0 } else { 72.0 },
+            ),
             rgba(11, 24, 29, 235),
             LINE,
         );
@@ -670,6 +761,20 @@ fn scene(game: &Game, t: f32, font: &Font) {
             10,
             MUTED,
         );
+        if game.enemies_enabled() {
+            txt(
+                font,
+                if game.enemies.is_empty() {
+                    "КОШМАР: после подбора начнётся погоня. Береги силы на возврат."
+                } else {
+                    "ПОГОНЯ! Беги к двери: D / -> + Shift или «К дому» + «Бег»."
+                },
+                76.0,
+                355.0,
+                11,
+                if game.enemies.is_empty() { AMBER } else { RED },
+            );
+        }
         right(
             font,
             &format!("ВЫНОСЛИВОСТЬ {:.0}%", game.stamina),
@@ -686,6 +791,11 @@ fn scene(game: &Game, t: f32, font: &Font) {
             game.stamina / 100.0,
             if game.sprinting { AMBER } else { LIME },
         );
+        if let Some(distance) = game.nearest_enemy_distance() {
+            let danger = if distance < 0.12 { RED } else { AMBER };
+            right(font, "СУЩЕСТВА ЗА СПИНОЙ", 1218.0, 336.0, 10, danger);
+            bar(1058.0, 347.0, 160.0, 4.0, 1.0 - distance / 0.45, danger);
+        }
     }
 }
 
@@ -1121,7 +1231,11 @@ fn overlay(game: &Game, font: &Font, hover: Vec2) {
             "Смена начинается",
             "Переживи 3 минуты или передай сигнал помощи на 100%.",
             "Снаружи: A / D — идти, Shift — бежать, E — взять / занести.",
-            "Дойди до канистры и вернись, пока не закончился таймер.",
+            if game.enemies_enabled() {
+                "На «Кошмаре» канистру охраняют существа. Береги силы на бег."
+            } else {
+                "Дойди до канистры и вернись, пока не закончился таймер."
+            },
             "Начать смену",
         ),
         Phase::Paused => (
@@ -1172,6 +1286,14 @@ fn overlay(game: &Game, font: &Font, hover: Vec2) {
             "Можно вернуться без канистры, если времени мало.",
             "Попробовать снова",
         ),
+        Phase::Caught => (
+            "СУЩЕСТВО ДОГНАЛО ТЕБЯ",
+            "Тебя настигли",
+            "На «Кошмаре» после подбора канистры начинается погоня.",
+            "Иди за топливом шагом. Береги выносливость для возврата.",
+            "Беги к двери: D + Shift, затем E. Мышью: «К дому» + «Бег».",
+            "Попробовать снова",
+        ),
         Phase::Playing => unreachable!(),
     };
     centered(
@@ -1180,7 +1302,10 @@ fn overlay(game: &Game, font: &Font, hover: Vec2) {
         640.0,
         329.0,
         11,
-        if matches!(game.phase, Phase::Frozen | Phase::Overrun | Phase::Lost) {
+        if matches!(
+            game.phase,
+            Phase::Frozen | Phase::Overrun | Phase::Lost | Phase::Caught
+        ) {
             RED
         } else {
             LIME
@@ -1274,6 +1399,7 @@ async fn main() {
         let (mx, my) = mouse_position();
         let hover = screen_to_game(mx, my);
         let phase_before = game.phase;
+        let enemies_before = game.enemies.len();
         if game.phase == Phase::Ready || game.is_finished() {
             if is_key_pressed(KeyCode::Q) {
                 let index = (game.difficulty as usize + 1) % Difficulty::ALL.len();
@@ -1376,10 +1502,18 @@ async fn main() {
         if game.integrity < integrity {
             Sounds::play(&sounds.alarm, sound_on);
         }
+        if game.enemies.len() > enemies_before {
+            Sounds::play(&sounds.alarm, sound_on);
+        }
         if game.is_finished()
             && !matches!(
                 phase_before,
-                Phase::Dawn | Phase::Rescued | Phase::Frozen | Phase::Overrun | Phase::Lost
+                Phase::Dawn
+                    | Phase::Rescued
+                    | Phase::Frozen
+                    | Phase::Overrun
+                    | Phase::Lost
+                    | Phase::Caught
             )
         {
             Sounds::play(&sounds.finish, sound_on);
@@ -1407,6 +1541,10 @@ async fn main() {
                         game.stamina,
                         game.difficulty as u32,
                         game.searches_left as u32,
+                        game.enemies.len() as u32,
+                        game.nearest_enemy_distance().unwrap_or(-1.0),
+                        game.enemies.first().map_or(-1.0, |enemy| enemy.position),
+                        game.enemies.first().map_or(0.0, |enemy| enemy.wake_in),
                     );
                 }
                 status_marker = marker;

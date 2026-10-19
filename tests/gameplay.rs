@@ -415,7 +415,11 @@ fn play_to_end(difficulty: Difficulty, radio: bool) -> Game {
             }
             if game.outside() {
                 controls.direction = if game.carrying { -1 } else { 1 };
-                controls.sprint = game.stamina > 20.0;
+                controls.sprint = if difficulty == Difficulty::Nightmare {
+                    game.carrying
+                } else {
+                    game.stamina > 20.0
+                };
             }
         } else {
             if game.temperature < 4.0 && !game.systems[1]

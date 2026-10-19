@@ -1,6 +1,7 @@
 pub const NIGHT_SECONDS: f32 = 180.0;
 pub const FUEL_SITES: [f32; 3] = [0.55, 0.77, 1.0];
 pub const INTERACTION_DISTANCE: f32 = 0.035;
+pub const ENEMY_CATCH_DISTANCE: f32 = 0.032;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[repr(u32)]
@@ -82,6 +83,7 @@ pub enum Phase {
     Frozen,
     Overrun,
     Lost,
+    Caught,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -94,6 +96,13 @@ pub struct Controls {
 pub struct Event {
     pub at: f32,
     pub text: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Enemy {
+    pub position: f32,
+    pub wake_in: f32,
+    speed: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +125,7 @@ pub struct Game {
     pub search_cooldown: f32,
     pub repair_cooldown: f32,
     pub events: Vec<Event>,
+    pub enemies: Vec<Enemy>,
     attack_cooldown: f32,
     previous_storm: bool,
     winded: bool,
@@ -151,6 +161,7 @@ impl Game {
                 at: 0.0,
                 text: "Смена началась. В лесу замечено движение.",
             }],
+            enemies: Vec::new(),
             attack_cooldown: 0.0,
             previous_storm: false,
             winded: false,
@@ -173,12 +184,28 @@ impl Game {
     pub fn is_finished(&self) -> bool {
         matches!(
             self.phase,
-            Phase::Dawn | Phase::Rescued | Phase::Frozen | Phase::Overrun | Phase::Lost
+            Phase::Dawn
+                | Phase::Rescued
+                | Phase::Frozen
+                | Phase::Overrun
+                | Phase::Lost
+                | Phase::Caught
         )
     }
 
     pub fn outside(&self) -> bool {
         self.searching > 0.0
+    }
+
+    pub fn enemies_enabled(&self) -> bool {
+        self.difficulty == Difficulty::Nightmare
+    }
+
+    pub fn nearest_enemy_distance(&self) -> Option<f32> {
+        self.enemies
+            .iter()
+            .map(|enemy| (enemy.position - self.position).abs())
+            .reduce(f32::min)
     }
 
     pub fn fuel_site(&self) -> f32 {
@@ -282,10 +309,27 @@ impl Game {
             self.searching = 0.0;
             self.position = 0.0;
             self.sprinting = false;
+            self.enemies.clear();
             self.systems[0] = true;
         } else {
             self.carrying = true;
-            self.log("Канистра у тебя. Вернись к двери и нажми E.");
+            if self.enemies_enabled() {
+                self.enemies = vec![
+                    Enemy {
+                        position: self.position + 0.18,
+                        wake_in: 0.8,
+                        speed: 0.28,
+                    },
+                    Enemy {
+                        position: self.position + 0.34,
+                        wake_in: 1.35,
+                        speed: 0.25,
+                    },
+                ];
+                self.log("Шорох за спиной! Существа идут за тобой. Беги к станции!");
+            } else {
+                self.log("Канистра у тебя. Вернись к двери и нажми E.");
+            }
         }
         true
     }
@@ -345,6 +389,11 @@ impl Game {
             if self.searching == 0.0 {
                 self.phase = Phase::Lost;
                 self.log("Время снаружи вышло. Ты потерял станцию в темноте.");
+                return;
+            }
+            if self.advance_enemies(dt) {
+                self.phase = Phase::Caught;
+                self.log("Существо настигло тебя. Береги силы на обратный путь.");
                 return;
             }
         }
@@ -409,6 +458,22 @@ impl Game {
         } else {
             Phase::Playing
         };
+    }
+
+    fn advance_enemies(&mut self, dt: f32) -> bool {
+        for enemy in &mut self.enemies {
+            let active_time = (dt - enemy.wake_in).max(0.0);
+            enemy.wake_in = (enemy.wake_in - dt).max(0.0);
+            if active_time == 0.0 {
+                continue;
+            }
+            let distance = self.position - enemy.position;
+            enemy.position += distance.signum() * (enemy.speed * active_time).min(distance.abs());
+            if (enemy.position - self.position).abs() <= ENEMY_CATCH_DISTANCE {
+                return true;
+            }
+        }
+        false
     }
 
     fn log(&mut self, text: &'static str) {
